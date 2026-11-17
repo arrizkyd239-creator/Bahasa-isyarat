@@ -1,0 +1,463 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perkenalan Bahasa Isyarat - DAFA</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+ font-family:Arial,sans-serif;
+ background:#07111f;
+ color:white;
+ min-height:100vh;
+ padding:20px;
+}
+
+.container{max-width:650px;margin:auto}
+
+header{text-align:center;padding:20px 0}
+header h1{color:#42e8d5;font-size:27px}
+header p{color:#aab8c9;margin-top:10px}
+
+.camera-box{
+ position:relative;
+ background:#101e30;
+ border:2px solid #24445d;
+ border-radius:20px;
+ overflow:hidden;
+ aspect-ratio:4/3;
+ margin-top:20px;
+}
+
+video,canvas{
+ position:absolute;
+ width:100%;
+ height:100%;
+ object-fit:cover;
+ transform:scaleX(-1);
+}
+
+video{display:none}
+
+#status{
+ text-align:center;
+ color:#42e8d5;
+ margin:15px;
+}
+
+button{
+ width:100%;
+ padding:15px;
+ border:0;
+ border-radius:12px;
+ font-size:16px;
+ font-weight:bold;
+ margin-top:12px;
+ cursor:pointer;
+}
+
+.start{background:#42e8d5;color:#07111f}
+.stop{background:#ef5268;color:white}
+
+.result{
+ background:#12263a;
+ border:1px solid #24445d;
+ border-radius:18px;
+ padding:22px;
+ text-align:center;
+ margin-top:20px;
+}
+
+.result h3{color:#aab8c9;font-size:14px}
+
+#word{
+ font-size:27px;
+ font-weight:bold;
+ color:#42e8d5;
+ margin:15px 0;
+ line-height:1.5;
+}
+
+#description{color:#b8c6d5;font-size:14px}
+
+.history{
+ margin-top:20px;
+ padding:20px;
+ background:#12263a;
+ border-radius:15px;
+}
+
+.history h3{margin-bottom:12px}
+
+#history{
+ color:#c5d4e3;
+ line-height:2;
+ overflow-wrap:anywhere;
+}
+
+.actions{display:flex;gap:10px}
+.actions button{flex:1}
+
+.steps{
+ margin-top:20px;
+ padding:20px;
+ background:#12263a;
+ border-radius:15px;
+}
+
+.steps h3{margin-bottom:15px;color:#42e8d5}
+.steps p{margin:12px 0;color:#d3dfeb;line-height:1.5}
+
+.note{
+ color:#aab8c9;
+ font-size:12px;
+ line-height:1.6;
+ margin-top:20px;
+ text-align:center;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<header>
+<h1>🤟 SIGN LANGUAGE</h1>
+<p>Perkenalan Otomatis Menggunakan Gerakan Tangan</p>
+<p>Made for DAFA</p>
+</header>
+
+<div class="camera-box">
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+</div>
+
+<div id="status">Kamera belum diaktifkan</div>
+
+<button class="start" onclick="startCamera()">
+📷 AKTIFKAN KAMERA
+</button>
+
+<button class="stop" onclick="stopCamera()">
+MATIKAN KAMERA
+</button>
+
+<div class="result">
+<h3>HASIL DETEKSI GERAKAN</h3>
+<div id="word">---</div>
+<div id="description">Arahkan tangan ke kamera</div>
+</div>
+
+<div class="actions">
+<button class="start" onclick="speak()">🔊 BACA SUARA</button>
+<button class="stop" onclick="clearResult()">HAPUS</button>
+</div>
+
+<div class="steps">
+<h3>📋 URUTAN PERKENALAN</h3>
+<p>👋 Lima jari: Halo, perkenalkan</p>
+<p>☝️ Satu jari: Nama saya</p>
+<p>✌️ Dua jari: DAFA</p>
+<p>🤟 Tiga jari: Saya sekolah di SMP NEGERI 6 TANGSEL</p>
+<p>🖖 Empat jari: Salam kenal</p>
+</div>
+
+<div class="history">
+<h3>📝 RIWAYAT PERKENALAN</h3>
+<div id="history">Belum ada hasil.</div>
+</div>
+
+<p class="note">
+Kamera membutuhkan izin pengguna dan koneksi HTTPS
+atau localhost. Pengenalan ini adalah pemetaan pose
+sederhana, bukan penerjemah BISINDO resmi.
+</p>
+
+</div>
+
+<script>
+const video=document.getElementById("video");
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+
+let cameraStream=null;
+let hands=null;
+let running=false;
+let lastWord="";
+let historyList=[];
+let processing=false;
+
+function setStatus(text){
+ document.getElementById("status").innerText=text;
+}
+
+function fingerUp(lm,tip,pip){
+ return lm[tip].y < lm[pip].y;
+}
+
+function detectGesture(lm){
+
+ const index=fingerUp(lm,8,6);
+ const middle=fingerUp(lm,12,10);
+ const ring=fingerUp(lm,16,14);
+ const pinky=fingerUp(lm,20,18);
+
+ const thumb=Math.abs(lm[4].x-lm[2].x)>0.10;
+
+ const count=[
+  index,middle,ring,pinky
+ ].filter(Boolean).length;
+
+ // LIMA JARI
+ if(count===4 && thumb)
+  return [
+   "HALO, PERKENALKAN",
+   "👋 Halo, perkenalkan"
+  ];
+
+ // SATU JARI
+ if(count===1 && index && !middle && !ring && !pinky)
+  return [
+   "NAMA SAYA",
+   "☝️ Nama saya"
+  ];
+
+ // DUA JARI
+ if(count===2 && index && middle && !ring && !pinky)
+  return [
+   "DAFA",
+   "✌️ DAFA"
+  ];
+
+ // TIGA JARI
+ if(count===3 && index && middle && ring && !pinky)
+  return [
+   "SAYA SEKOLAH DI SMP NEGERI 6 TANGSEL",
+   "🤟 Saya sekolah di SMP Negeri 6 Tangsel"
+  ];
+
+ // EMPAT JARI
+ if(count===4 && !thumb)
+  return [
+   "SALAM KENAL",
+   "🖖 Salam kenal"
+  ];
+
+ return [
+  "MENDETEKSI",
+  "Silakan bentuk gerakan tangan"
+ ];
+}
+
+function drawHand(lm){
+
+ const connections=[
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+ ];
+
+ ctx.lineWidth=3;
+ ctx.strokeStyle="#42e8d5";
+
+ connections.forEach(([a,b])=>{
+  ctx.beginPath();
+  ctx.moveTo(lm[a].x*canvas.width,lm[a].y*canvas.height);
+  ctx.lineTo(lm[b].x*canvas.width,lm[b].y*canvas.height);
+  ctx.stroke();
+ });
+
+ lm.forEach(point=>{
+  ctx.beginPath();
+  ctx.arc(
+   point.x*canvas.width,
+   point.y*canvas.height,
+   5,0,Math.PI*2
+  );
+  ctx.fillStyle="#ffffff";
+  ctx.fill();
+  ctx.strokeStyle="#42e8d5";
+  ctx.lineWidth=2;
+  ctx.stroke();
+ });
+}
+
+function updateResult(word,description){
+
+ document.getElementById("word").innerText=word;
+ document.getElementById("description").innerText=description;
+
+ if(word!=="MENDETEKSI" && word!==lastWord){
+
+  lastWord=word;
+
+  historyList.unshift(word);
+  historyList=historyList.slice(0,20);
+
+  document.getElementById("history").innerText=
+   historyList.join(" → ");
+ }
+}
+
+async function startCamera(){
+
+ if(running)return;
+
+ try{
+
+  if(!navigator.mediaDevices?.getUserMedia){
+   throw new Error("Gunakan website HTTPS untuk membuka kamera.");
+  }
+
+  setStatus("Meminta izin kamera...");
+
+  cameraStream=await navigator.mediaDevices.getUserMedia({
+   video:{
+    facingMode:"user",
+    width:{ideal:1280},
+    height:{ideal:720}
+   },
+   audio:false
+  });
+
+  video.srcObject=cameraStream;
+  await video.play();
+
+  canvas.width=video.videoWidth;
+  canvas.height=video.videoHeight;
+
+  hands=new Hands({
+   locateFile:file=>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+
+  hands.setOptions({
+   maxNumHands:1,
+   modelComplexity:1,
+   minDetectionConfidence:0.7,
+   minTrackingConfidence:0.7
+  });
+
+  hands.onResults(results=>{
+
+   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+   if(results.multiHandLandmarks &&
+      results.multiHandLandmarks.length>0){
+
+    const lm=results.multiHandLandmarks[0];
+
+    drawHand(lm);
+
+    const result=detectGesture(lm);
+
+    updateResult(result[0],result[1]);
+
+    setStatus("🟢 TANGAN TERDETEKSI");
+
+   }else{
+
+    lastWord="";
+    setStatus("Mencari tangan...");
+   }
+  });
+
+  running=true;
+  setStatus("Kamera aktif. Arahkan tangan.");
+
+  processFrame();
+
+ }catch(error){
+
+  setStatus("Kamera gagal dibuka: "+error.message);
+
+  if(cameraStream){
+   cameraStream.getTracks().forEach(track=>track.stop());
+   cameraStream=null;
+  }
+ }
+}
+
+async function processFrame(){
+
+ if(!running || processing)return;
+
+ if(video.readyState>=2){
+
+  processing=true;
+
+  try{
+   await hands.send({image:video});
+  }catch(error){
+   console.error(error);
+  }
+
+  processing=false;
+ }
+
+ if(running){
+  requestAnimationFrame(processFrame);
+ }
+}
+
+function stopCamera(){
+
+ running=false;
+
+ if(cameraStream){
+  cameraStream.getTracks().forEach(track=>track.stop());
+  cameraStream=null;
+ }
+
+ video.srcObject=null;
+
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ setStatus("Kamera dimatikan");
+}
+
+function speak(){
+
+ const word=document.getElementById("word").innerText;
+
+ if(word==="---" || word==="MENDETEKSI")return;
+
+ speechSynthesis.cancel();
+
+ const speech=new SpeechSynthesisUtterance(word);
+ speech.lang="id-ID";
+
+ speechSynthesis.speak(speech);
+}
+
+function clearResult(){
+
+ lastWord="";
+ historyList=[];
+
+ document.getElementById("word").innerText="---";
+ document.getElementById("description").innerText=
+ "Arahkan tangan ke kamera";
+
+ document.getElementById("history").innerText=
+ "Belum ada hasil.";
+
+ speechSynthesis.cancel();
+}
+
+window.addEventListener("beforeunload",()=>{
+ stopCamera();
+});
+</script>
+
+</body>
+</html>
